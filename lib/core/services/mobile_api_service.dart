@@ -394,7 +394,15 @@ class MobileApiService {
       );
       if (res.statusCode == 200 || res.statusCode == 201) {
         final decoded = jsonDecode(res.body);
-        return decoded is Map ? Map<String, dynamic>.from(decoded['data'] ?? decoded) : {'qrCode': res.body};
+        if (decoded is Map) {
+          if (decoded['data'] is Map) {
+            final m = Map<String, dynamic>.from(decoded['data'] as Map);
+            if (decoded['message'] != null) m['message'] = decoded['message'];
+            return m;
+          }
+          return Map<String, dynamic>.from(decoded);
+        }
+        return {'qrCode': res.body};
       }
       return null;
     } catch (e) {
@@ -477,16 +485,54 @@ class MobileApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> searchPatient(
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 2. PATIENT SEARCH API (by name, mobile, abha, email, mrn, or auto)
+  // ─────────────────────────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> searchPatients(
     String query, {
+    String? searchType, // 'auto', 'name', 'mobile', 'abha', 'email', 'mrn'
     int menuId = 169,
     int moduleId = 27,
     String actionCode = 'VIEW',
   }) async {
     try {
-      final isDigits = RegExp(r'^\d+$').hasMatch(query.trim());
-      final param = (isDigits && query.length < 10) ? 'mrn' : 'mobile';
-      final uri = Uri.parse('$baseUrl/patients/search?$param=${Uri.encodeComponent(query.trim())}');
+      final trimmed = query.trim();
+      if (trimmed.isEmpty) return [];
+
+      String queryString;
+      final type = searchType?.toLowerCase();
+      if (type == 'name') {
+        queryString = 'name=${Uri.encodeComponent(trimmed)}';
+      } else if (type == 'mobile') {
+        queryString = 'mobile=${Uri.encodeComponent(trimmed)}';
+      } else if (type == 'abha') {
+        queryString = 'abha=${Uri.encodeComponent(trimmed)}';
+      } else if (type == 'email') {
+        queryString = 'email=${Uri.encodeComponent(trimmed)}';
+      } else if (type == 'mrn') {
+        queryString = 'mrn=${Uri.encodeComponent(trimmed)}';
+      } else {
+        // Auto-detect matching Portal register-camp-page.tsx resolveQueryParams
+        if (trimmed.contains('@')) {
+          queryString = 'email=${Uri.encodeComponent(trimmed)}';
+        } else if (RegExp(r'^\d{2}-\d{4}-\d{4}-\d{4}$').hasMatch(trimmed) ||
+            (trimmed.length == 14 && RegExp(r'^\d+$').hasMatch(trimmed))) {
+          queryString = 'abha=${Uri.encodeComponent(trimmed)}';
+        } else if (RegExp(r'^\d+$').hasMatch(trimmed)) {
+          if (trimmed.length == 10) {
+            queryString = 'mobile=$trimmed';
+          } else if (trimmed.length == 12) {
+            queryString = 'aadhaar=$trimmed';
+          } else {
+            queryString = 'mrn=$trimmed';
+          }
+        } else {
+          queryString = 'name=${Uri.encodeComponent(trimmed)}';
+        }
+      }
+
+      final uri = Uri.parse('$baseUrl/patients/search?$queryString');
+      debugPrint('[MobileApiService] searchPatients: $uri');
 
       final res = await _get(
         uri,
@@ -496,22 +542,53 @@ class MobileApiService {
         actionCode: actionCode,
       );
 
+      debugPrint('[MobileApiService] searchPatients status: ${res.statusCode}');
+      debugPrint('[MobileApiService] searchPatients body: ${res.body}');
+
       if (res.statusCode == 200 || res.statusCode == 201) {
         final decoded = jsonDecode(res.body);
-        final data = decoded is Map ? decoded['data'] : null;
-        final patients = data is Map ? data['patients'] : (decoded is Map ? decoded['patients'] : null);
-        if (patients is List && patients.isNotEmpty) {
-          return Map<String, dynamic>.from(patients.first as Map);
+        List? patientsList;
+        if (decoded is Map) {
+          final data = decoded['data'];
+          if (data is Map && data['patients'] is List) {
+            patientsList = data['patients'];
+          } else if (data is List) {
+            patientsList = data;
+          } else if (decoded['patients'] is List) {
+            patientsList = decoded['patients'];
+          } else if (data is Map && data.containsKey('name')) {
+            return [Map<String, dynamic>.from(data)];
+          }
+        } else if (decoded is List) {
+          patientsList = decoded;
         }
-        if (data is Map && data.containsKey('name')) {
-          return Map<String, dynamic>.from(data);
+
+        if (patientsList != null && patientsList.isNotEmpty) {
+          return List<Map<String, dynamic>>.from(patientsList.whereType<Map>());
         }
       }
-      return null;
+      return [];
     } catch (e) {
-      debugPrint('searchPatient error: $e');
-      return null;
+      debugPrint('[MobileApiService] searchPatients error: $e');
+      return [];
     }
+  }
+
+  Future<Map<String, dynamic>?> searchPatient(
+    String query, {
+    String? searchType,
+    int menuId = 169,
+    int moduleId = 27,
+    String actionCode = 'VIEW',
+  }) async {
+    final list = await searchPatients(
+      query,
+      searchType: searchType,
+      menuId: menuId,
+      moduleId: moduleId,
+      actionCode: actionCode,
+    );
+    return list.isNotEmpty ? list.first : null;
   }
 
   Future<Map<String, dynamic>> registerPatientToCamp({
@@ -540,11 +617,26 @@ class MobileApiService {
 
       final decoded = jsonDecode(res.body);
       final isSuccess = res.statusCode == 200 || res.statusCode == 201;
+
+      String message;
+      if (decoded is Map) {
+        if (decoded['message'] is List) {
+          message = (decoded['message'] as List).join(', ');
+        } else if (decoded['message'] != null) {
+          message = decoded['message'].toString();
+        } else if (decoded['error'] != null) {
+          message = decoded['error'].toString();
+        } else {
+          message = isSuccess ? 'Patient enrolled successfully' : 'Registration failed';
+        }
+      } else {
+        message = isSuccess ? 'Patient enrolled successfully' : 'Registration failed';
+      }
+
       return {
         'success': isSuccess,
-        'message': decoded is Map && decoded['message'] != null
-            ? decoded['message'].toString()
-            : (isSuccess ? 'Patient enrolled successfully' : 'Registration failed'),
+        'statusCode': res.statusCode,
+        'message': message,
         'data': decoded is Map ? decoded['data'] : null,
       };
     } catch (e) {
