@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/mobile_menu.dart';
+import '../services/his_websocket_service.dart';
 import '../services/session_menu_service.dart';
 import '../theme/app_theme.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -192,6 +193,7 @@ class _StaffAppDrawerState extends State<StaffAppDrawer> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(ctx).pop();
+              HisWebSocketService().disconnect();
               SessionMenuService().clear();
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -212,7 +214,8 @@ class _StaffAppDrawerState extends State<StaffAppDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    final menus = SessionMenuService().menus;
+    // Show only remaining menus in the drawer (bottom navbar items excluded)
+    final menus = SessionMenuService().drawerMenus;
     final staffName = SessionMenuService().staffName;
 
     return Drawer(

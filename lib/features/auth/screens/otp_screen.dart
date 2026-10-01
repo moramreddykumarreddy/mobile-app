@@ -9,6 +9,7 @@ import '../../../core/services/auth_api_service.dart';
 import '../../../core/services/session_menu_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../camps/screens/camps_screen.dart';
+import '../../camps/screens/live_camp_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String username;
@@ -140,12 +141,17 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() => _isVerifying = false);
 
     if (result.success) {
+      final uid = result.data != null
+          ? SessionMenuService.pickUserId(result.data!)
+          : null;
       SessionMenuService().setUser(
         username: widget.username,
+        userId: uid,
       );
 
-      // Fetch dynamic menus immediately so we know the first menu (Camps)
+      // Fetch dynamic menus immediately
       final menus = await SessionMenuService().loadMenus();
+      final dashMenu = SessionMenuService().dashboardMenu;
       final firstMenu = menus.isNotEmpty ? menus.first : null;
 
       if (!mounted) return;
@@ -169,15 +175,24 @@ class _OtpScreenState extends State<OtpScreen> {
         ),
       );
 
-      // Open Camps (first menu in the response) directly
+      // Open Dashboard module menu first if present, otherwise fallback to firstMenu (e.g. Camps)
+      Widget initialScreen;
+      if (dashMenu != null) {
+        initialScreen = LiveCampScreen(
+          menuId: dashMenu.menuId,
+          moduleId: dashMenu.moduleId,
+          actionCode: 'VIEW',
+        );
+      } else {
+        initialScreen = CampsScreen(
+          menuId: firstMenu?.menuId ?? 214,
+          moduleId: firstMenu?.moduleId ?? 24,
+          actionCode: 'VIEW',
+        );
+      }
+
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => CampsScreen(
-            menuId: firstMenu?.menuId ?? 214,
-            moduleId: firstMenu?.moduleId ?? 24,
-            actionCode: 'VIEW',
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => initialScreen),
         (route) => false,
       );
     } else {

@@ -7,7 +7,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/services/mobile_api_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/staff_app_bar.dart';
 import '../../../core/widgets/staff_app_drawer.dart';
+import '../../../core/widgets/staff_bottom_nav_bar.dart';
 
 class CampsScreen extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
@@ -486,6 +488,42 @@ class _CampsScreenState extends State<CampsScreen> {
                         ),
                       ),
                     ),
+                    if (status.toLowerCase().contains('schedul') ||
+                        status.toLowerCase().contains('pending')) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Start Camp',
+                        icon: const Icon(Icons.play_circle_fill_rounded,
+                            color: Color(0xFF16A34A), size: 28),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _showStartCampDialog(camp);
+                        },
+                      ),
+                    ],
+                    if (status.toLowerCase().contains('progress') ||
+                        status.toLowerCase().contains('ongoing')) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Complete Camp',
+                        icon: const Icon(Icons.check_circle_rounded,
+                            color: Color(0xFF2563EB), size: 28),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _showCompleteCampDialog(camp);
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: 'Cancel Camp',
+                        icon: const Icon(Icons.cancel_rounded,
+                            color: Color(0xFFDC2626), size: 28),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _showCancelCampDialog(camp);
+                        },
+                      ),
+                    ],
                     const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton(
@@ -709,55 +747,15 @@ class _CampsScreenState extends State<CampsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       drawer: const StaffAppDrawer(currentRoute: '/portal/camps'),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Color(0xFF1E293B)),
-            onPressed: () {
-              if (widget.onOpenDrawer != null) {
-                widget.onOpenDrawer!();
-              } else {
-                Scaffold.of(ctx).openDrawer();
-              }
-            },
-            tooltip: 'Open menu (â˜°)',
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Camps',
-              style: GoogleFonts.notoSans(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-            Text(
-              'Camp Management',
-              style: GoogleFonts.notoSans(
-                fontSize: 11,
-                color: const Color(0xFF64748B),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
+      bottomNavigationBar: const StaffBottomNavBar(currentRoute: '/portal/camps'),
+      appBar: StaffAppBar(
+        onOpenDrawer: widget.onOpenDrawer,
+        extraActions: [
           IconButton(
             icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primary),
             tooltip: 'Facility ABHA Scan & Share QR',
             onPressed: _openFacilityQrDialog,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-            tooltip: 'Refresh camps',
-            onPressed: _loadCampsFromApi,
-          ),
-          const SizedBox(width: 4),
         ],
       ),
       body: Column(

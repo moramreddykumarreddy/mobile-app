@@ -4,7 +4,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/services/mobile_api_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/staff_app_bar.dart';
 import '../../../core/widgets/staff_app_drawer.dart';
+import '../../../core/widgets/staff_bottom_nav_bar.dart';
 
 class TodaysPatientsScreen extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
@@ -31,7 +33,6 @@ class _TodaysPatientsScreenState extends State<TodaysPatientsScreen> {
 
   List<Map<String, dynamic>> _patients = [];
   Map<String, dynamic> _counts = {'registered': 0, 'draft': 0, 'prescriptionDone': 0};
-  String _campName = 'Vision Camp';
 
   @override
   void initState() {
@@ -51,7 +52,6 @@ class _TodaysPatientsScreenState extends State<TodaysPatientsScreen> {
         setState(() {
           if (res['success'] == true && res['patients'] is List) {
             final list = res['patients'] as List;
-            _campName = res['campName']?.toString() ?? 'Vision Camp';
             if (res['counts'] is Map) {
               _counts = Map<String, dynamic>.from(res['counts']);
             }
@@ -145,51 +145,8 @@ class _TodaysPatientsScreenState extends State<TodaysPatientsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       drawer: const StaffAppDrawer(currentRoute: '/portal/patients'),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Color(0xFF1E293B)),
-            onPressed: () {
-              if (widget.onOpenDrawer != null) {
-                widget.onOpenDrawer!();
-              } else {
-                Scaffold.of(ctx).openDrawer();
-              }
-            },
-            tooltip: 'Open menu (☰)',
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Today's Patient",
-              style: GoogleFonts.notoSans(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-            Text(
-              '$_campName • EMR Consultation',
-              style: GoogleFonts.notoSans(
-                fontSize: 11,
-                color: const Color(0xFF64748B),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
-            tooltip: 'Refresh /camps/registered-patients (VIEW)',
-            onPressed: _loadPatientsFromApi,
-          ),
-        ],
-      ),
+      bottomNavigationBar: const StaffBottomNavBar(currentRoute: '/portal/patients'),
+      appBar: StaffAppBar(onOpenDrawer: widget.onOpenDrawer),
       body: Column(
         children: [
           // Header Stats Badges
@@ -279,24 +236,34 @@ class _TodaysPatientsScreenState extends State<TodaysPatientsScreen> {
 
           // Patients List
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredPatients.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+            child: RefreshIndicator(
+              onRefresh: _loadPatientsFromApi,
+              color: AppColors.primary,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredPatients.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
                           children: [
-                            const Icon(Icons.people_outline_rounded, size: 48, color: Color(0xFF94A3B8)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No registered patients found',
-                              style: GoogleFonts.notoSans(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                            const SizedBox(height: 80),
+                            Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.people_outline_rounded, size: 48, color: Color(0xFF94A3B8)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No registered patients found',
+                                    style: GoogleFonts.notoSans(fontSize: 15, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(16),
                         itemCount: _filteredPatients.length,
                         itemBuilder: (context, index) {
                           final patient = _filteredPatients[index];
@@ -404,6 +371,7 @@ class _TodaysPatientsScreenState extends State<TodaysPatientsScreen> {
                           ).animate().fadeIn(delay: Duration(milliseconds: index * 40));
                         },
                       ),
+            ),
           ),
         ],
       ),

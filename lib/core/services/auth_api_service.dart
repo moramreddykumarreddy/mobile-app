@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/mobile_menu.dart';
+import 'session_menu_service.dart';
 
 class ApiResponse {
   final bool success;
@@ -35,6 +36,11 @@ class AuthApiService {
   void clearCookies() {
     _cookies.clear();
   }
+
+  String get cookieHeader =>
+      _cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
+  Map<String, String> get cookies => Map.unmodifiable(_cookies);
 
   Map<String, String> buildHeaders([Map<String, String>? extra]) {
     final headers = <String, String>{
@@ -553,4 +559,34 @@ class AuthApiService {
       return [];
     }
   }
+
+  /// Ensure we have a userId for WebSocket connection, replicating Portal ensureUserId
+  Future<String?> ensureUserId() async {
+    final session = SessionMenuService();
+    if (session.userId != null && session.userId!.isNotEmpty) {
+      return session.userId;
+    }
+
+    for (final path in ['/auth/me', '/auth/profile', '/auth/session']) {
+      try {
+        final uri = Uri.parse('$baseUrl$path');
+        final response = await http.get(uri, headers: _buildHeaders());
+        _extractCookies(response);
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic>) {
+            final uid = SessionMenuService.pickUserId(decoded);
+            if (uid != null && uid.isNotEmpty) {
+              session.setUserId(uid);
+              return uid;
+            }
+          }
+        }
+      } catch (_) {
+        /* try next */
+      }
+    }
+    return session.username.isNotEmpty ? session.username : null;
+  }
 }
+

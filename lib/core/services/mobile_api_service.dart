@@ -667,19 +667,39 @@ class MobileApiService {
         final decoded = jsonDecode(res.body);
         final data = decoded is Map ? (decoded['data'] ?? decoded) : null;
         if (data is Map) {
-          final campRaw = data['live-camp'] ?? data['liveCamp'];
-          final queueRaw = data['live-queue'] ?? data['liveQueue'];
+          final campRaw = data['live-camp'] ??
+              data['liveCamp'] ??
+              data['live_camp'] ??
+              data['camps'];
+          final queueRaw = data['live-queue'] ??
+              data['liveQueue'] ??
+              data['live_queue'] ??
+              data['queue'];
+          final List<Map<String, dynamic>> campsList = [];
+          if (campRaw is List) {
+            for (final item in campRaw) {
+              if (item is Map) {
+                campsList.add(Map<String, dynamic>.from(item));
+              }
+            }
+          } else if (campRaw is Map) {
+            campsList.add(Map<String, dynamic>.from(campRaw));
+          }
+          final campFirst = campsList.isNotEmpty ? campsList.first : null;
+          debugPrint(
+              'fetchLiveCampDashboard: parsed ${campsList.length} camps, first: ${campFirst?['campName'] ?? campFirst?['camp_name']}');
           return {
             'success': true,
-            'camp': campRaw is List && campRaw.isNotEmpty ? campRaw[0] : campRaw,
+            'camps': campsList,
+            'camp': campFirst,
             'queue': queueRaw is List ? queueRaw : [],
           };
         }
       }
-      return {'success': false, 'camp': null, 'queue': []};
+      return {'success': false, 'camps': <Map<String, dynamic>>[], 'camp': null, 'queue': []};
     } catch (e) {
       debugPrint('fetchLiveCampDashboard error: $e');
-      return {'success': false, 'camp': null, 'queue': []};
+      return {'success': false, 'camps': <Map<String, dynamic>>[], 'camp': null, 'queue': []};
     }
   }
 
@@ -790,6 +810,304 @@ class MobileApiService {
     } catch (e) {
       debugPrint('fetchPincodeDetails error: $e');
       return null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ABHA PATIENT REGISTRATION API (/abha/register/*)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Step 1: Find linked ABHA accounts by 10-digit mobile number
+  Future<Map<String, dynamic>> abhaFindAccount(String mobileNumber) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/register/find-account');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {'mobileNumber': mobileNumber.trim()},
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaFindAccount error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Step 2: Send OTP to chosen account (otpProvider: 'aadhaar' or 'abdm')
+  Future<Map<String, dynamic>> abhaSendOtp({
+    required String txnId,
+    required String index,
+    required String otpProvider,
+  }) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/register/send-otp');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {
+          'txnId': txnId,
+          'index': index,
+          'otpProvider': otpProvider,
+        },
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaSendOtp error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Step 3: Verify OTP and register patient
+  Future<Map<String, dynamic>> abhaVerifyOtp({
+    required String txnId,
+    required String otp,
+  }) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/register/verify-otp');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {
+          'txnId': txnId,
+          'otp': otp.trim(),
+        },
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaVerifyOtp error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Optional: Get base64 ABHA card
+  Future<String?> abhaGetCard(String profileTokenId) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/profile/abha-card');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'VIEW',
+        body: {'profileTokenId': profileTokenId},
+      );
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final decoded = jsonDecode(res.body);
+        return decoded?['data']?['card']?.toString();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('abhaGetCard error: $e');
+      return null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ABHA CREATE / ENROLLMENT API (/abha/create/*)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Create ABHA Step 1: Send OTP to Aadhaar-linked mobile
+  /// POST /abha/create/send-otp
+  /// Body: {"aadhaarNumber": "..."}
+  Future<Map<String, dynamic>> abhaCreateSendOtp(String aadhaarNumber) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/create/send-otp');
+      final cleanAadhaar = aadhaarNumber.trim().replaceAll(RegExp(r'\D'), '');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {'aadhaarNumber': cleanAadhaar},
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaCreateSendOtp error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Create ABHA Step 2: Verify Aadhaar OTP & mobile number to create ABHA
+  /// POST /abha/create/verify-otp
+  /// Body: {"txnId": "...", "otp": "...", "mobileNumber": "..."}
+  Future<Map<String, dynamic>> abhaCreateVerifyOtp({
+    required String txnId,
+    required String otp,
+    required String mobileNumber,
+  }) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/create/verify-otp');
+      final cleanMobile = mobileNumber.trim().replaceAll(RegExp(r'\D'), '');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {
+          'txnId': txnId.trim(),
+          'otp': otp.trim(),
+          'mobileNumber': cleanMobile,
+        },
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaCreateVerifyOtp error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Create ABHA Step 3a: Get ABHA address suggestions
+  /// POST /abha/create/address-suggestions
+  /// Body: {"txnId": "..."}
+  Future<Map<String, dynamic>> abhaCreateAddressSuggestions(String txnId) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/create/address-suggestions');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {'txnId': txnId.trim()},
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaCreateAddressSuggestions error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Create ABHA Step 3b: Set chosen ABHA address to complete registration
+  /// POST /abha/create/address
+  /// Body: {"txnId": "...", "abhaAddress": "..."}
+  Future<Map<String, dynamic>> abhaCreateSetAddress({
+    required String txnId,
+    required String abhaAddress,
+  }) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/patient/register');
+      final effectiveModuleId = dynMenu?.moduleId ?? 29;
+      final effectiveMenuId = dynMenu?.menuId ?? 180;
+
+      final uri = Uri.parse('$baseUrl/abha/create/address');
+      final res = await _post(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/patient/register',
+        actionCode: 'ADD',
+        body: {
+          'txnId': txnId.trim(),
+          'abhaAddress': abhaAddress.trim(),
+        },
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == null) {
+          decoded['success'] = res.statusCode == 200 || res.statusCode == 201;
+        }
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {'success': false, 'statusCode': res.statusCode, 'message': 'Invalid response from server'};
+    } catch (e) {
+      debugPrint('abhaCreateSetAddress error: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 
@@ -989,17 +1307,62 @@ class MobileApiService {
     int menuId = 210,
     int moduleId = 33,
     String actionCode = 'VIEW',
+    int? distCode,
+    int? isActive,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/camps/screening-team');
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/teams');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? menuId;
+
+      final queryParams = <String, String>{
+        'moduleId': effectiveModuleId.toString(),
+      };
+      if (distCode != null) queryParams['dist_code'] = distCode.toString();
+      if (isActive != null) queryParams['is_active'] = isActive.toString();
+
+      final uri = Uri.parse('$baseUrl/camps/screening-team').replace(
+        queryParameters: queryParams,
+      );
       final res = await _get(
         uri,
-        menuId: menuId,
-        moduleId: moduleId,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
         routePath: '/portal/teams',
         actionCode: actionCode,
       );
 
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final decoded = jsonDecode(res.body);
+        final list = decoded is List
+            ? decoded
+            : (decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['teams'] ?? []) : []);
+        if (list is List) {
+          return List<Map<String, dynamic>>.from(list.whereType<Map>());
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('fetchScreeningTeams error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchNodalOfficers({int moduleId = 33}) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/teams');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? 210;
+
+      final uri = Uri.parse('$baseUrl/camps/screening-team/nodal-officers')
+          .replace(queryParameters: {'moduleId': effectiveModuleId.toString()});
+      final res = await _get(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/teams',
+        actionCode: 'VIEW',
+      );
       if (res.statusCode == 200 || res.statusCode == 201) {
         final decoded = jsonDecode(res.body);
         final list = decoded is List
@@ -1011,7 +1374,38 @@ class MobileApiService {
       }
       return [];
     } catch (e) {
-      debugPrint('fetchScreeningTeams error: $e');
+      debugPrint('fetchNodalOfficers error: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTeamLeads({int moduleId = 33}) async {
+    try {
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/teams');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? 210;
+
+      final uri = Uri.parse('$baseUrl/camps/screening-team/team-leads')
+          .replace(queryParameters: {'moduleId': effectiveModuleId.toString()});
+      final res = await _get(
+        uri,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
+        routePath: '/portal/teams',
+        actionCode: 'VIEW',
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final decoded = jsonDecode(res.body);
+        final list = decoded is List
+            ? decoded
+            : (decoded is Map ? (decoded['data'] ?? decoded['items'] ?? []) : []);
+        if (list is List) {
+          return List<Map<String, dynamic>>.from(list.whereType<Map>());
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('fetchTeamLeads error: $e');
       return [];
     }
   }
@@ -1026,16 +1420,25 @@ class MobileApiService {
     String? status,
   }) async {
     try {
+      final dynMenu =
+          SessionMenuService().getMenuForRoute('/portal/teleconsult');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? menuId;
+
       final queryParams = <String, String>{};
-      if (status != null && status.isNotEmpty && status != 'All') {
-        queryParams['status'] = status.toUpperCase();
+      if (status != null &&
+          status.isNotEmpty &&
+          status.toLowerCase() != 'all') {
+        queryParams['status'] = status.toLowerCase();
       }
-      final uri = Uri.parse('$baseUrl/teleconsult/sessions').replace(queryParameters: queryParams);
+      final uri = Uri.parse('$baseUrl/teleconsult/sessions').replace(
+        queryParameters: queryParams.isEmpty ? null : queryParams,
+      );
 
       final res = await _get(
         uri,
-        menuId: menuId,
-        moduleId: moduleId,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
         routePath: '/portal/teleconsult',
         actionCode: actionCode,
       );
@@ -1044,7 +1447,12 @@ class MobileApiService {
         final decoded = jsonDecode(res.body);
         final list = decoded is List
             ? decoded
-            : (decoded is Map ? (decoded['data'] ?? decoded['sessions'] ?? []) : []);
+            : (decoded is Map
+                ? (decoded['data'] ??
+                    decoded['items'] ??
+                    decoded['sessions'] ??
+                    [])
+                : []);
         if (list is List) {
           return List<Map<String, dynamic>>.from(list.whereType<Map>());
         }
@@ -1086,19 +1494,42 @@ class MobileApiService {
   Future<bool> completeTeleconsultSession(
     String sessionId, {
     String notes = '',
+    String diagnosis = '',
+    String clinicalNotes = '',
+    bool followUpRequired = false,
+    String? followUpDate,
     int menuId = 269,
     int moduleId = 45,
     String actionCode = 'COMPLETE',
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/teleconsult/sessions/$sessionId/complete');
+      final dynMenu =
+          SessionMenuService().getMenuForRoute('/portal/teleconsult');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? menuId;
+
+      final uri =
+          Uri.parse('$baseUrl/teleconsult/sessions/$sessionId/complete');
+      final effectiveNotes =
+          clinicalNotes.isNotEmpty ? clinicalNotes : notes;
+      final body = <String, dynamic>{
+        'clinicalNotes': effectiveNotes.trim(),
+        'diagnosis': diagnosis.trim(),
+        'followUpRequired': followUpRequired,
+      };
+      if (followUpRequired &&
+          followUpDate != null &&
+          followUpDate.trim().isNotEmpty) {
+        body['followUpDate'] = followUpDate.trim();
+      }
+
       final res = await _post(
         uri,
-        menuId: menuId,
-        moduleId: moduleId,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
         routePath: '/portal/teleconsult',
         actionCode: actionCode,
-        body: {'notes': notes},
+        body: body,
       );
       return res.statusCode == 200 || res.statusCode == 201;
     } catch (e) {
@@ -1109,20 +1540,31 @@ class MobileApiService {
 
   Future<bool> cancelTeleconsultSession(
     String sessionId, {
+    String remarks = '',
     String reason = '',
     int menuId = 269,
     int moduleId = 45,
     String actionCode = 'CANCEL',
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/teleconsult/sessions/$sessionId/cancel');
+      final dynMenu =
+          SessionMenuService().getMenuForRoute('/portal/teleconsult');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? menuId;
+
+      final uri =
+          Uri.parse('$baseUrl/teleconsult/sessions/$sessionId/cancel');
+      final effectiveRemarks = remarks.isNotEmpty ? remarks : reason;
+      final body = <String, dynamic>{
+        'remarks': effectiveRemarks.trim(),
+      };
       final res = await _post(
         uri,
-        menuId: menuId,
-        moduleId: moduleId,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
         routePath: '/portal/teleconsult',
         actionCode: actionCode,
-        body: {'reason': reason},
+        body: body,
       );
       return res.statusCode == 200 || res.statusCode == 201;
     } catch (e) {
@@ -1163,11 +1605,14 @@ class MobileApiService {
     String actionCode = 'TOGGLE',
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/camps/screening-team/$teamCode/status');
+      final dynMenu = SessionMenuService().getMenuForRoute('/portal/teams');
+      final effectiveModuleId = dynMenu?.moduleId ?? moduleId;
+      final effectiveMenuId = dynMenu?.menuId ?? menuId;
+      final uri = Uri.parse('$baseUrl/camps/screening-team/$teamCode/status?moduleId=$effectiveModuleId');
       final res = await _patch(
         uri,
-        menuId: menuId,
-        moduleId: moduleId,
+        menuId: effectiveMenuId,
+        moduleId: effectiveModuleId,
         routePath: '/portal/teams',
         actionCode: actionCode,
         body: {'is_active': isActive, 'remarks': remarks},
@@ -1176,6 +1621,44 @@ class MobileApiService {
     } catch (e) {
       debugPrint('toggleTeamStatus error: $e');
       return false;
+    }
+  }
+
+  /// GET /api/v1/emr/patient/{mrn}/history
+  /// Fetches complete clinical history across all encounters for a given MRN
+  Future<Map<String, dynamic>> fetchPatientHistory(
+    String mrn, {
+    int menuId = 231,
+    int moduleId = 36,
+    String actionCode = 'VIEW',
+  }) async {
+    try {
+      final cleanMrn = mrn.trim();
+      final uri = Uri.parse('$baseUrl/emr/patient/$cleanMrn/history');
+      final res = await _get(
+        uri,
+        menuId: menuId,
+        moduleId: moduleId,
+        routePath: '/portal/patient-history',
+        actionCode: actionCode,
+      );
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+
+      return {
+        'success': res.statusCode == 200 || res.statusCode == 201,
+        'data': decoded is List ? decoded : [],
+      };
+    } catch (e) {
+      debugPrint('fetchPatientHistory error: $e');
+      return {
+        'success': false,
+        'message': 'Failed to connect: $e',
+        'data': [],
+      };
     }
   }
 }

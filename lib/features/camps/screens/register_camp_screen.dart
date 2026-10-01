@@ -4,7 +4,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/services/mobile_api_service.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/staff_app_bar.dart';
 import '../../../core/widgets/staff_app_drawer.dart';
+import '../../../core/widgets/staff_bottom_nav_bar.dart';
+import '../../../core/widgets/patient_qr_scanner_dialog.dart';
 
 class RegisterPatientToCampScreen extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
@@ -12,12 +15,15 @@ class RegisterPatientToCampScreen extends StatefulWidget {
   final int moduleId;
   final String actionCode;
 
+  final String? initialSearchQuery;
+
   const RegisterPatientToCampScreen({
     super.key,
     this.onOpenDrawer,
     this.menuId = 169,
     this.moduleId = 27,
     this.actionCode = 'VIEW',
+    this.initialSearchQuery,
   });
 
   @override
@@ -32,6 +38,18 @@ class _RegisterPatientToCampScreenState
   List<Map<String, dynamic>> _searchResults = [];
   Map<String, dynamic>? _foundPatient;
   bool _isRegistering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSearchQuery != null &&
+        widget.initialSearchQuery!.isNotEmpty) {
+      _searchController.text = widget.initialSearchQuery!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _searchPatient();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -90,6 +108,32 @@ class _RegisterPatientToCampScreenState
         );
       }
     }
+  }
+
+  Future<void> _scanPatientQr() async {
+    final scannedMrn = await PatientQrScannerScreen.scan(context);
+    if (!mounted || scannedMrn == null || scannedMrn.trim().isEmpty) return;
+
+    final cleanMrn = scannedMrn.trim();
+    setState(() {
+      _searchController.text = cleanMrn;
+      _foundPatient = null;
+      _searchResults = [];
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Scanned Patient MRN: $cleanMrn',
+          style: GoogleFonts.notoSans(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color(0xFF002B49),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    _searchPatient();
   }
 
   String _calculateAge(dynamic dobVal) {
@@ -188,6 +232,9 @@ class _RegisterPatientToCampScreenState
       );
       return;
     }
+
+    // Clear search input field after calling API
+    _searchController.clear();
 
     // Extract real API response fields
     final apiMessage = (res['message'] ?? 'Patient registered in camp successfully').toString();
@@ -302,44 +349,8 @@ class _RegisterPatientToCampScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       drawer: const StaffAppDrawer(currentRoute: '/portal/register-camp'),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Color(0xFF1E293B)),
-            onPressed: () {
-              if (widget.onOpenDrawer != null) {
-                widget.onOpenDrawer!();
-              } else {
-                Scaffold.of(ctx).openDrawer();
-              }
-            },
-            tooltip: 'Open menu (☰)',
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Register Patient to Camp',
-              style: GoogleFonts.notoSans(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-            Text(
-              'Camp Registration For Patient',
-              style: GoogleFonts.notoSans(
-                fontSize: 11,
-                color: const Color(0xFF64748B),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
+      bottomNavigationBar: const StaffBottomNavBar(currentRoute: '/portal/register-camp'),
+      appBar: StaffAppBar(onOpenDrawer: widget.onOpenDrawer),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -374,8 +385,11 @@ class _RegisterPatientToCampScreenState
                       fillColor: Colors.white,
                       prefixIcon: const Icon(Icons.search_rounded,
                           color: Color(0xFF64748B), size: 20),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_searchController.text.isNotEmpty)
+                            IconButton(
                               icon: const Icon(Icons.clear,
                                   size: 18, color: Color(0xFF94A3B8)),
                               onPressed: () {
@@ -385,8 +399,15 @@ class _RegisterPatientToCampScreenState
                                   _searchResults = [];
                                 });
                               },
-                            )
-                          : null,
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.qr_code_scanner_rounded,
+                                size: 22, color: AppColors.primary),
+                            tooltip: 'Scan Patient QR',
+                            onPressed: _scanPatientQr,
+                          ),
+                        ],
+                      ),
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 12),
                       border: OutlineInputBorder(
@@ -778,6 +799,27 @@ class _RegisterPatientToCampScreenState
                         style: GoogleFonts.notoSans(
                           fontSize: 12,
                           color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: _scanPatientQr,
+                        icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                        label: Text(
+                          'Scan Patient QR Code',
+                          style: GoogleFonts.notoSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF002B49),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(200, 46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 1,
                         ),
                       ),
                     ],
